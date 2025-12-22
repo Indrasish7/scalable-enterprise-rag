@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+venv/
+
+# Data
+data/raw_docs/
+data/processed_docs/
+
+# Vector store
+*.faiss
+*.index
+
+# IDE
+.idea/
+.vscode/
+.env.*
