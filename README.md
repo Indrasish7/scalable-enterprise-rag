@@ -63,38 +63,45 @@ This project focuses on **scalability, modularity, system design, and evaluation
 scalable-enterprise-rag/
 │
 ├── app/
-│   └── ui.py                 # User-facing interface (CLI / Streamlit-ready)
-│
-├── ingestion/
-│   ├── loaders.py            # Document loaders (PDF, TXT, HTML, etc.)
-│   └── cleaner.py            # Text cleaning & normalization
-│
-├── chunking/
-│   └── strategies.py         # Fixed, sliding window, semantic chunking
-│
-├── embeddings/
-│   ├── embedder.py           # Embedding generation logic
-│   └── cache.py              # Embedding cache layer
-│
-├── vectorstore/
-│   └── faiss_store.py        # FAISS index creation & querying
-│
-├── retrieval/
-│   └── retriever.py          # Top-K semantic retrieval
-│
-├── evaluation/
-│   ├── latency.py            # End-to-end latency measurement
-│   └── retrieval_metrics.py  # Recall@K, MRR (planned)
+│   └── ui.py
 │
 ├── data/
-│   ├── raw_docs/             # Ignored (input documents)
-│   └── processed_docs/       # Ignored (processed chunks)
+│   ├── raw_docs/
+│   └── processed_docs/
 │
-├── config.yaml               # Central configuration file
-├── main.py                   # Pipeline entry point
-├── .gitignore
-├── LICENSE
-└── README.md
+├── ingestion/
+│   ├── loaders.py
+│   └── cleaner.py
+│
+├── chunking/
+│   └── strategies.py
+│
+├── embeddings/
+│   ├── embedder.py
+│   └── cache.py
+│
+├── vectorstore/
+│   └── faiss_store.py
+│
+├── retrieval/
+│   └── retriever.py
+│
+├── llm/
+│   └── gemini_llm.py
+│
+├── rag/
+│   └── pipeline.py
+│
+├── evaluation/
+│   ├── latency.py
+│   └── retrieval_metrics.py
+│
+├── .env
+├── config.yaml
+├── main.py
+├── README.md
+└── LICENSE
+
 ```
 
 ---
