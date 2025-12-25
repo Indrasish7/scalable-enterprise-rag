@@ -18,6 +18,22 @@ This project focuses on **scalability, modularity, system design, and evaluation
 
 ---
 
+## 📄 Supported Document Formats
+
+The system supports **multi-format enterprise document ingestion**:
+
+- ✅ **TXT** — Plain text files  
+- ✅ **PDF** — Extracted using `pypdf`  
+- ✅ **DOCX** — Extracted using `python-docx`
+
+- Multi-format ingestion (TXT, PDF, DOCX) via extensible loader architecture
+
+
+Documents are automatically routed to the correct loader using a **factory-based ingestion layer**, making it easy to extend support to additional formats such as HTML, Markdown, or PPTX.
+
+
+---
+
 ## 🏗️ System Architecture
 
 ```text
@@ -63,44 +79,48 @@ This project focuses on **scalability, modularity, system design, and evaluation
 scalable-enterprise-rag/
 │
 ├── app/
-│   └── ui.py
-│
-├── data/
-│   ├── raw_docs/
-│   └── processed_docs/
+│   └── ui.py                 # Streamlit UI for end-to-end RAG interaction
 │
 ├── ingestion/
-│   ├── loaders.py
-│   └── cleaner.py
+│   ├── base.py               # BaseLoader abstract class
+│   ├── loaders.py            # Loader factory (TXT / PDF / DOCX routing)
+│   ├── pdf_loader.py         # PDF document ingestion
+│   ├── docx_loader.py        # Word (DOCX) document ingestion
+│   └── cleaner.py            # Text cleaning & normalization
 │
 ├── chunking/
-│   └── strategies.py
+│   └── strategies.py         # Fixed-size chunking with overlap
 │
 ├── embeddings/
-│   ├── embedder.py
-│   └── cache.py
+│   ├── embedder.py           # Embedding abstraction
+│   └── cache.py              # Hash-based embedding cache
 │
 ├── vectorstore/
-│   └── faiss_store.py
+│   └── faiss_store.py        # FAISS index creation & semantic search
 │
 ├── retrieval/
-│   └── retriever.py
+│   └── retriever.py          # Top-K semantic retrieval layer
 │
 ├── llm/
-│   └── gemini_llm.py
+│   └── gemini_llm.py         # Gemini LLM wrapper (Gemini 3 Flash / Pro)
 │
 ├── rag/
-│   └── pipeline.py
+│   └── pipeline.py           # End-to-end RAG orchestration
 │
 ├── evaluation/
-│   ├── latency.py
-│   └── retrieval_metrics.py
+│   ├── latency.py            # Latency measurement (planned)
+│   └── retrieval_metrics.py  # Recall@K, MRR (planned)
+│
+├── data/
+│   ├── raw_docs/             # Ignored (uploaded documents)
+│   └── processed_docs/       # Ignored (intermediate artifacts)
 │
 ├── .env
 ├── config.yaml
 ├── main.py
 ├── README.md
 └── LICENSE
+
 
 ```
 
