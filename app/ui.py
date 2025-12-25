@@ -1,6 +1,9 @@
 import streamlit as st
 from typing import List
+import tempfile
+import os
 
+from ingestion.loaders import get_loader
 from ingestion.cleaner import TextCleaner
 from chunking.strategies import FixedSizeChunker
 from embeddings.embedder import DummyEmbedder
@@ -25,7 +28,7 @@ st.caption("Production-grade Retrieval-Augmented Generation with FAISS + Gemini"
 
 
 # -------------------------------------------------
-# Cached pipeline builder (Improvement #1)
+# Cached pipeline builder (Performance Improvement)
 # -------------------------------------------------
 @st.cache_resource
 def build_pipeline(raw_docs: List[dict]) -> RAGPipeline:
@@ -37,7 +40,7 @@ def build_pipeline(raw_docs: List[dict]) -> RAGPipeline:
     chunker = FixedSizeChunker(chunk_size=500, overlap=50)
     chunks = chunker.chunk(cleaned_docs)
 
-    # Embed with cache
+    # Embed with caching
     embedder = DummyEmbedder()
     cache = EmbeddingCache()
 
@@ -45,9 +48,9 @@ def build_pipeline(raw_docs: List[dict]) -> RAGPipeline:
     metadatas = []
 
     for chunk in chunks:
-        cached = cache.get(chunk["text"])
-        if cached:
-            vector = cached
+        cached_vector = cache.get(chunk["text"])
+        if cached_vector:
+            vector = cached_vector
         else:
             vector = embedder.embed([chunk["text"]])[0]
             cache.set(chunk["text"], vector)
@@ -64,11 +67,7 @@ def build_pipeline(raw_docs: List[dict]) -> RAGPipeline:
 
     # Retriever + LLM
     retriever = Retriever(embedder, vector_store)
-
-    try:
-        llm = GeminiLLM()
-    except Exception as e:
-        raise RuntimeError(f"LLM initialization failed: {e}")
+    llm = GeminiLLM()
 
     return RAGPipeline(retriever, llm)
 
@@ -89,8 +88,8 @@ if "vector_store_ready" not in st.session_state:
 st.sidebar.header("📄 Knowledge Base")
 
 uploaded_files = st.sidebar.file_uploader(
-    "Upload text documents",
-    type=["txt"],
+    "Upload documents (TXT, PDF, DOCX)",
+    type=["txt", "pdf", "docx"],
     accept_multiple_files=True
 )
 
@@ -101,16 +100,20 @@ if st.sidebar.button("Build Knowledge Base"):
         with st.spinner("Processing documents..."):
             raw_docs = []
 
-            for file in uploaded_files:
-                content = file.read().decode("utf-8", errors="ignore")
-                raw_docs.append({
-                    "id": file.name,
-                    "text": content,
-                    "metadata": {
-                        "source": file.name,
-                        "type": "txt"
-                    }
-                })
+            with tempfile.TemporaryDirectory() as tmpdir:
+                for uploaded_file in uploaded_files:
+                    file_path = os.path.join(tmpdir, uploaded_file.name)
+
+                    # Save uploaded file temporarily
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.read())
+
+                    # Detect extension and route to correct loader
+                    extension = uploaded_file.name.split(".")[-1]
+                    loader = get_loader(extension)
+
+                    docs = loader.load(file_path)
+                    raw_docs.extend(docs)
 
             try:
                 pipeline = build_pipeline(raw_docs)
@@ -144,7 +147,7 @@ if st.button("Get Answer"):
         st.write(answer)
 
         # -------------------------------------------------
-        # Retrieved context visibility (Improvement #2)
+        # Retrieved context visibility (Transparency Improvement)
         # -------------------------------------------------
         with st.expander("📚 Retrieved Contexts"):
             retrieved_chunks = st.session_state.pipeline.retriever.retrieve(query)

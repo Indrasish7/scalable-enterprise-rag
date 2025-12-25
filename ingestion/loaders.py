@@ -1,59 +1,45 @@
-from abc import ABC, abstractmethod
-from typing import List, Dict
-import os
-import uuid
+from typing import Dict
 
-
-class BaseLoader(ABC):
-    """Abstract base class for all document loaders."""
-
-    @abstractmethod
-    def load(self, source: str) -> List[Dict]:
-        pass
+from ingestion.base import BaseLoader
+from ingestion.pdf_loader import PDFLoader
+from ingestion.docx_loader import DocxLoader
 
 
 class TextFileLoader(BaseLoader):
     """Loads plain text files."""
 
-    def load(self, source: str) -> List[Dict]:
+    def load(self, source: str):
+        import os
+        import uuid
+
         if not os.path.exists(source):
             raise FileNotFoundError(f"Source not found: {source}")
 
-        documents = []
+        with open(source, "r", encoding="utf-8", errors="ignore") as f:
+            text = f.read()
 
-        if os.path.isdir(source):
-            files = [
-                os.path.join(source, f)
-                for f in sorted(os.listdir(source))
-                if f.endswith(".txt")
-            ]
-        else:
-            files = [source]
+        if not text.strip():
+            return []
 
-        for file_path in files:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read()
-
-            if not text.strip():
-                continue
-
-            documents.append({
-                "id": str(uuid.uuid4()),
-                "text": text,
-                "metadata": {
-                    "source": file_path,
-                    "type": "txt",
-                    "size": len(text)
-                }
-            })
-
-        return documents
+        return [{
+            "id": str(uuid.uuid4()),
+            "text": text,
+            "metadata": {
+                "source": source,
+                "type": "txt",
+                "size": len(text)
+            }
+        }]
 
 
-def get_loader(file_type: str) -> BaseLoader:
-    if file_type == "txt":
+def get_loader(file_extension: str) -> BaseLoader:
+    ext = file_extension.lower().lstrip(".")
+
+    if ext == "txt":
         return TextFileLoader()
+    elif ext == "pdf":
+        return PDFLoader()
+    elif ext == "docx":
+        return DocxLoader()
     else:
-        raise ValueError(f"Unsupported file type: {file_type}")
-
-
+        raise ValueError(f"Unsupported file type: {file_extension}")
