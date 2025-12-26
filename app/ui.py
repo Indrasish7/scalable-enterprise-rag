@@ -6,7 +6,7 @@ import os
 from ingestion.loaders import get_loader
 from ingestion.cleaner import TextCleaner
 from chunking.strategies import FixedSizeChunker
-from embeddings.embedder import DummyEmbedder
+from embeddings.embedder import GeminiEmbedder
 from embeddings.cache import EmbeddingCache
 from vectorstore.faiss_store import FaissVectorStore
 from retrieval.retriever import Retriever
@@ -28,44 +28,65 @@ st.caption("Production-grade Retrieval-Augmented Generation with FAISS + Gemini"
 
 
 # -------------------------------------------------
-# Cached pipeline builder (Performance Improvement)
+# Cached pipeline builder
+# (Improvements: batching + safety guard)
 # -------------------------------------------------
 @st.cache_resource
 def build_pipeline(raw_docs: List[dict]) -> RAGPipeline:
-    # Clean documents
+    # 1️⃣ Clean documents
     cleaner = TextCleaner()
     cleaned_docs = cleaner.clean_documents(raw_docs)
 
-    # Chunk documents
+    if not cleaned_docs:
+        raise ValueError("No valid text found after cleaning documents.")
+
+    # 2️⃣ Chunk documents
     chunker = FixedSizeChunker(chunk_size=500, overlap=50)
     chunks = chunker.chunk(cleaned_docs)
 
-    # Embed with caching
-    embedder = DummyEmbedder()
+    if not chunks:
+        raise ValueError("No valid chunks generated from documents.")
+
+    # 3️⃣ Embed with batching + cache
+    embedder = GeminiEmbedder()
     cache = EmbeddingCache()
 
     embeddings = []
     metadatas = []
 
-    for chunk in chunks:
+    texts_to_embed = []
+    chunk_indices = []
+
+    for idx, chunk in enumerate(chunks):
         cached_vector = cache.get(chunk["text"])
         if cached_vector:
-            vector = cached_vector
+            embeddings.append(cached_vector)
+            metadatas.append({**chunk["metadata"], "text": chunk["text"]})
         else:
-            vector = embedder.embed([chunk["text"]])[0]
-            cache.set(chunk["text"], vector)
+            texts_to_embed.append(chunk["text"])
+            chunk_indices.append(idx)
 
-        embeddings.append(vector)
-        metadatas.append({
-            **chunk["metadata"],
-            "text": chunk["text"]
-        })
+    # Batch embedding call (🔥 performance improvement)
+    if texts_to_embed:
+        new_vectors = embedder.embed(texts_to_embed)
 
-    # Build FAISS index
+        for idx, vector in zip(chunk_indices, new_vectors):
+            cache.set(chunks[idx]["text"], vector)
+            embeddings.append(vector)
+            metadatas.append({
+                **chunks[idx]["metadata"],
+                "text": chunks[idx]["text"]
+            })
+
+    # 4️⃣ Defensive guard (🔥 correctness improvement)
+    if not embeddings:
+        raise ValueError("Embedding failed: no vectors generated.")
+
+    # 5️⃣ Build FAISS index
     vector_store = FaissVectorStore(vector_dim=len(embeddings[0]))
     vector_store.add(embeddings, metadatas)
 
-    # Retriever + LLM
+    # 6️⃣ Retriever + LLM + RAG Pipeline
     retriever = Retriever(embedder, vector_store)
     llm = GeminiLLM()
 
@@ -108,7 +129,7 @@ if st.sidebar.button("Build Knowledge Base"):
                     with open(file_path, "wb") as f:
                         f.write(uploaded_file.read())
 
-                    # Detect extension and route to correct loader
+                    # Route to correct loader
                     extension = uploaded_file.name.split(".")[-1]
                     loader = get_loader(extension)
 
@@ -147,7 +168,7 @@ if st.button("Get Answer"):
         st.write(answer)
 
         # -------------------------------------------------
-        # Retrieved context visibility (Transparency Improvement)
+        # Retrieved context visibility
         # -------------------------------------------------
         with st.expander("📚 Retrieved Contexts"):
             retrieved_chunks = st.session_state.pipeline.retriever.retrieve(query)
