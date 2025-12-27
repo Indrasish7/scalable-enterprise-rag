@@ -9,12 +9,13 @@ This project focuses on **scalability, modularity, system design, and evaluation
 ## 🚀 Key Features
 
 - Modular **end-to-end RAG architecture**
-- **FAISS-based vector search** for high-performance retrieval
-- Config-driven pipeline using YAML
-- Pluggable chunking strategies
-- Embedding caching to reduce recomputation
-- Explicit **evaluation layer** (latency & retrieval quality)
-- Designed with **enterprise-scale document systems** in mind
+- **Multi-format document ingestion** (TXT, PDF, DOCX)
+- **Incremental knowledge base updates** (no re-embedding unchanged data)
+- **Persistent FAISS vector store**
+- Hash-based **embedding cache**
+- **Observability-first UI** (latency, retrieved chunks, confidence)
+- Explicit **evaluation layer** (Recall@K, latency)
+- Designed with **enterprise document systems** in mind
 
 ---
 
@@ -31,6 +32,44 @@ The system supports **multi-format enterprise document ingestion**:
 
 Documents are automatically routed to the correct loader using a **factory-based ingestion layer**, making it easy to extend support to additional formats such as HTML, Markdown, or PPTX.
 
+---
+
+## 🧠 Knowledge Base Lifecycle
+
+This system implements a **production-grade knowledge base lifecycle**.
+
+### ✅ Incremental Ingestion
+- Each document is assigned a **stable, deterministic document ID**
+- Content hashes are tracked via `kb_state.json`
+- **Only new or modified documents are re-chunked and re-embedded**
+
+### ✅ Persistent Vector Store
+- FAISS index and metadata are persisted locally
+- Restarting the app **does NOT rebuild embeddings**
+- The KB grows incrementally over time
+
+### ✅ Ignored Runtime Data
+The following artifacts are **intentionally excluded from Git**:
+
+- FAISS index files
+- KB state (`kb_state.json`)
+- Metadata (`metadata.pkl`)
+- Uploaded documents
+
+> This mirrors real production systems where data lives in object storage, volumes, or databases — not Git.
+
+---
+
+## 👀 Observability & Transparency
+
+The Streamlit UI exposes internal system behavior:
+
+- ⏱ **Retrieval latency (ms)**
+- 📦 **Number of retrieved chunks**
+- 🟢 **Confidence indicator** (heuristic)
+- 📚 **Exact retrieved contexts used by the LLM**
+
+This makes the system feel like an **internal Google / Meta RAG tool**, not a black box.
 
 ---
 
@@ -53,22 +92,22 @@ Documents are automatically routed to the correct loader using a **factory-based
        │
        ▼
 ┌──────────────┐
-│ Embeddings    │ ← embedder.py, cache.py
+│ Embeddings    │ ← GeminiEmbedder + cache
 └──────┬───────┘
        │
        ▼
 ┌──────────────┐
-│ Vector Store  │ ← FAISS
+│ Vector Store  │ ← FAISS (persistent)
 └──────┬───────┘
        │
        ▼
 ┌──────────────┐
-│ Retrieval     │ ← retriever.py
+│ Retrieval     │ ← Top-K semantic search
 └──────┬───────┘
        │
        ▼
 ┌──────────────┐
-│ LLM Response  │
+│ LLM Response  │ ← Gemini (grounded)
 └──────────────┘
 ```
 ---
@@ -79,62 +118,62 @@ Documents are automatically routed to the correct loader using a **factory-based
 scalable-enterprise-rag/
 │
 ├── app/
-│   └── ui.py                 # Streamlit UI for end-to-end RAG interaction
+│   └── ui.py                 # Streamlit UI (ingestion, QA, observability)
 │
 ├── ingestion/
-│   ├── base.py               # BaseLoader abstract class
-│   ├── loaders.py            # Loader factory (TXT / PDF / DOCX routing)
-│   ├── pdf_loader.py         # PDF document ingestion
-│   ├── docx_loader.py        # Word (DOCX) document ingestion
-│   └── cleaner.py            # Text cleaning & normalization
+│   ├── base.py               # BaseLoader abstraction
+│   ├── loaders.py            # Loader factory (TXT / PDF / DOCX)
+│   ├── pdf_loader.py
+│   ├── docx_loader.py
+│   └── cleaner.py
 │
 ├── chunking/
 │   └── strategies.py         # Fixed-size chunking with overlap
 │
 ├── embeddings/
-│   ├── embedder.py           # Embedding abstraction
+│   ├── embedder.py           # GeminiEmbedder / DummyEmbedder
 │   └── cache.py              # Hash-based embedding cache
 │
 ├── vectorstore/
-│   └── faiss_store.py        # FAISS index creation & semantic search
+│   ├── faiss_store.py        # FAISS index wrapper
+│   └── kb_manager.py         # Incremental KB lifecycle manager
 │
 ├── retrieval/
-│   └── retriever.py          # Top-K semantic retrieval layer
+│   └── retriever.py
 │
 ├── llm/
-│   └── gemini_llm.py         # Gemini LLM wrapper (Gemini 3 Flash / Pro)
+│   └── gemini_llm.py
 │
 ├── rag/
-│   └── pipeline.py           # End-to-end RAG orchestration
+│   └── pipeline.py           # RAG orchestration + observability
 │
 ├── evaluation/
-│   ├── latency.py            # Latency measurement (planned)
-│   └── retrieval_metrics.py  # Recall@K, MRR (planned)
+│   ├── latency.py
+│   ├── retrieval_metrics.py
+│   └── run_evaluation.py
 │
-├── data/
-│   ├── raw_docs/             # Ignored (uploaded documents)
-│   └── processed_docs/       # Ignored (intermediate artifacts)
+├── data/                     # ❌ Ignored (runtime artifacts)
 │
-├── .env
-├── config.yaml
-├── main.py
+├── .gitignore
+├── .env                      # GEMINI_API_KEY (ignored)
 ├── README.md
 └── LICENSE
-
 
 ```
 
 ---
-## ⚙️ Configuration (`config.yaml`)
+## ⚙️ Configuration & Secrets
 
-All pipeline behavior is controlled via configuration:
+- API keys are loaded from `.env`
+- `.env` and all runtime data are **gitignored**
 
-- Chunk size & overlap  
-- Embedding model selection  
-- Vector index parameters  
-- Retrieval top-K settings  
+### Production Deployment Recommendations
 
-This enables **rapid experimentation without changing code**.
+For production environments, secrets and state should be managed using:
+
+- Environment variables
+- Secret managers (e.g., AWS Secrets Manager, GCP Secret Manager)
+- Persistent volumes or object storage (e.g., EBS, GCS, S3)
 
 ---
 
@@ -142,7 +181,7 @@ This enables **rapid experimentation without changing code**.
 
 Unlike most RAG demos, this project includes an explicit evaluation layer.
 
-Planned / supported metrics:
+Planned/supported metrics:
 
 - Retrieval latency  
 - Recall@K  
@@ -181,6 +220,7 @@ python main.py
 ## 🛣️ Roadmap
 
 Planned improvements to evolve this into a fully production-ready RAG system:
+
 
 - [ ] Hybrid retrieval (BM25 + Dense vectors)
 - [ ] Cross-encoder reranking for improved answer relevance
