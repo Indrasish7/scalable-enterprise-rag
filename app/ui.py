@@ -161,17 +161,51 @@ if st.button("Get Answer"):
     elif not query.strip():
         st.error("Please enter a valid question.")
     else:
-        with st.spinner("Generating answer..."):
-            answer = st.session_state.pipeline.answer(query)
+        with st.spinner("Generating answer with observability..."):
+            result = st.session_state.pipeline.answer_with_observability(query)
 
+        # -------------------------
+        # Answer
+        # -------------------------
         st.subheader("✅ Answer")
-        st.write(answer)
+        st.write(result["answer"])
 
-        # -------------------------------------------------
-        # Retrieved context visibility
-        # -------------------------------------------------
+        # -------------------------
+        # Observability Metrics
+        # -------------------------
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            label="⏱ Retrieval Latency (ms)",
+            value=f"{result['retrieval_latency_ms']:.2f}"
+        )
+
+        col2.metric(
+            label="📦 Retrieved Chunks",
+            value=result["num_retrieved_chunks"]
+        )
+
+        # Confidence heuristic
+        if result["num_retrieved_chunks"] == 0:
+            confidence = "Low"
+            color = "🔴"
+        elif result["num_retrieved_chunks"] < 3:
+            confidence = "Medium"
+            color = "🟡"
+        else:
+            confidence = "High"
+            color = "🟢"
+
+        col3.metric(
+            label="Confidence",
+            value=f"{color} {confidence}"
+        )
+
+        # -------------------------
+        # Retrieved Contexts
+        # -------------------------
         with st.expander("📚 Retrieved Contexts"):
-            retrieved_chunks = st.session_state.pipeline.retriever.retrieve(query)
-            for i, item in enumerate(retrieved_chunks, 1):
+            for i, chunk in enumerate(result["retrieved_chunks"], 1):
                 st.markdown(f"**Context {i}**")
-                st.write(item["metadata"]["text"][:500])
+                st.write(chunk["metadata"]["text"][:600])
+
