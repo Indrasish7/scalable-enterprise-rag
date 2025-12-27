@@ -8,9 +8,7 @@ __pycache__/
 venv/
 
 # Data
-data/raw_docs/
-data/processed_docs/
-
+data/
 # Vector store
 *.faiss
 *.index
