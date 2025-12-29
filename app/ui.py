@@ -16,21 +16,23 @@ from llm.gemini_llm import GeminiLLM
 from rag.pipeline import RAGPipeline
 
 
-# -------------------------------------------------
+# =================================================
+# Constants
+# =================================================
+EMBEDDING_DIM = 768  # Gemini embedding dimension
+
+
+# =================================================
 # Helper: Stable document ID
-# -------------------------------------------------
+# =================================================
 def generate_stable_doc_id(filename: str, text: str) -> str:
-    """
-    Generate a deterministic document ID based on filename + content.
-    Same file -> same ID, modified file -> new ID.
-    """
     content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return f"{filename}:{content_hash}"
 
 
-# -------------------------------------------------
+# =================================================
 # Page configuration
-# -------------------------------------------------
+# =================================================
 st.set_page_config(
     page_title="Scalable Enterprise RAG",
     page_icon="🧠",
@@ -41,11 +43,13 @@ st.title("🧠 Scalable Enterprise RAG System")
 st.caption("Production-grade Retrieval-Augmented Generation with FAISS + Gemini")
 
 
-# -------------------------------------------------
-# Session state (persistent objects)
-# -------------------------------------------------
+# =================================================
+# Session state initialization
+# =================================================
 if "vector_store" not in st.session_state:
-    st.session_state.vector_store = None
+    st.session_state.vector_store = FaissVectorStore(
+        vector_dim=EMBEDDING_DIM
+    )
 
 if "pipeline" not in st.session_state:
     st.session_state.pipeline = None
@@ -57,12 +61,26 @@ if "kb_manager" not in st.session_state:
     st.session_state.kb_manager = KnowledgeBaseManager()
 
 
-# -------------------------------------------------
-# Incremental pipeline builder (NO caching)
-# -------------------------------------------------
+# =================================================
+# AUTO-ENABLE PIPELINE IF KB EXISTS (CRITICAL FIX)
+# =================================================
+if (
+    st.session_state.vector_store is not None
+    and st.session_state.vector_store.index.ntotal > 0
+    and st.session_state.pipeline is None
+):
+    retriever = Retriever(GeminiEmbedder(), st.session_state.vector_store)
+    llm = GeminiLLM()
+    st.session_state.pipeline = RAGPipeline(retriever, llm)
+    st.session_state.vector_store_ready = True
+
+
+# =================================================
+# Incremental ingestion + pipeline builder
+# =================================================
 def build_pipeline_incremental(
     raw_docs: List[dict],
-    vector_store: FaissVectorStore | None,
+    vector_store: FaissVectorStore,
     kb_manager: KnowledgeBaseManager
 ):
     cleaner = TextCleaner()
@@ -81,12 +99,10 @@ def build_pipeline_incremental(
         if not kb_manager.is_new_or_updated(doc_id, text):
             continue
 
-        # Clean
         cleaned_docs = cleaner.clean_documents([doc])
         if not cleaned_docs:
             continue
 
-        # Chunk
         chunks = chunker.chunk(cleaned_docs)
         if not chunks:
             continue
@@ -103,7 +119,6 @@ def build_pipeline_incremental(
                 texts_to_embed.append(chunk["text"])
                 chunk_refs.append(chunk)
 
-        # Batch embedding
         if texts_to_embed:
             vectors = embedder.embed(texts_to_embed)
             for chunk, vector in zip(chunk_refs, vectors):
@@ -114,16 +129,23 @@ def build_pipeline_incremental(
                     "text": chunk["text"]
                 })
 
-        # ✅ Update KB state only after successful ingestion
+        # ✅ Persist KB state only after successful ingestion
         kb_manager.update_doc(doc_id, text)
 
+    # =================================================
+    # 🔑 UX FIX: No new docs, but KB already exists
+    # =================================================
     if not all_embeddings:
-        raise ValueError("No new or updated documents to ingest.")
+        st.sidebar.info(
+            "ℹ️ No new documents detected. Using existing knowledge base."
+        )
+        retriever = Retriever(embedder, vector_store)
+        llm = GeminiLLM()
+        return RAGPipeline(retriever, llm), vector_store
 
-    # 🔒 Persistent FAISS index
-    if vector_store is None:
-        vector_store = FaissVectorStore(vector_dim=len(all_embeddings[0]))
-
+    # =================================================
+    # Add new vectors to FAISS
+    # =================================================
     vector_store.add(all_embeddings, all_metadatas)
 
     retriever = Retriever(embedder, vector_store)
@@ -132,9 +154,9 @@ def build_pipeline_incremental(
     return RAGPipeline(retriever, llm), vector_store
 
 
-# -------------------------------------------------
+# =================================================
 # Sidebar: Knowledge Base Management
-# -------------------------------------------------
+# =================================================
 st.sidebar.header("📄 Knowledge Base")
 
 uploaded_files = st.sidebar.file_uploader(
@@ -157,12 +179,9 @@ if st.sidebar.button("Build / Update Knowledge Base"):
                     with open(file_path, "wb") as f:
                         f.write(uploaded_file.read())
 
-                    ext = uploaded_file.name.split(".")[-1]
-                    loader = get_loader(ext)
-
+                    loader = get_loader(uploaded_file.name.split(".")[-1])
                     docs = loader.load(file_path)
 
-                    # ✅ Assign stable document IDs here
                     for doc in docs:
                         doc["id"] = generate_stable_doc_id(
                             uploaded_file.name,
@@ -171,24 +190,20 @@ if st.sidebar.button("Build / Update Knowledge Base"):
 
                     raw_docs.extend(docs)
 
-            try:
-                pipeline, st.session_state.vector_store = build_pipeline_incremental(
-                    raw_docs,
-                    st.session_state.vector_store,
-                    st.session_state.kb_manager
-                )
+            pipeline, st.session_state.vector_store = build_pipeline_incremental(
+                raw_docs,
+                st.session_state.vector_store,
+                st.session_state.kb_manager
+            )
 
-                st.session_state.pipeline = pipeline
-                st.session_state.vector_store_ready = True
-                st.sidebar.success("Knowledge base updated successfully!")
-
-            except Exception as e:
-                st.sidebar.warning(str(e))
+            st.session_state.pipeline = pipeline
+            st.session_state.vector_store_ready = True
+            st.sidebar.success("Knowledge base ready!")
 
 
-# -------------------------------------------------
+# =================================================
 # Main: Question Answering
-# -------------------------------------------------
+# =================================================
 st.header("💬 Ask a Question")
 
 query = st.text_input(
@@ -197,26 +212,23 @@ query = st.text_input(
 )
 
 if st.button("Get Answer"):
-    if not st.session_state.vector_store_ready:
-        st.error("Please build the knowledge base first.")
+    if st.session_state.pipeline is None:
+        st.error("Knowledge base not ready yet.")
     elif not query.strip():
         st.error("Please enter a valid question.")
     else:
-        with st.spinner("Generating answer with observability..."):
+        with st.spinner("Generating answer..."):
             result = st.session_state.pipeline.answer_with_observability(query)
 
-        # Answer
         st.subheader("✅ Answer")
         st.write(result["answer"])
 
-        # Metrics
         col1, col2, col3 = st.columns(3)
 
         col1.metric(
             "⏱ Retrieval Latency (ms)",
             f"{result['retrieval_latency_ms']:.2f}"
         )
-
         col2.metric(
             "📦 Retrieved Chunks",
             result["num_retrieved_chunks"]
@@ -230,7 +242,6 @@ if st.button("Get Answer"):
 
         col3.metric("Confidence", confidence)
 
-        # Context transparency
         with st.expander("📚 Retrieved Contexts"):
             for i, chunk in enumerate(result["retrieved_chunks"], 1):
                 st.markdown(f"**Context {i}**")
