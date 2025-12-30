@@ -2,7 +2,7 @@
 
 **Production-grade Retrieval-Augmented Generation (RAG) system** designed for enterprise-scale document ingestion, semantic search, and LLM-powered question answering.
 
-This project focuses on **scalability, modularity, system design, and evaluation**, not just demo-level RAG pipelines.
+This project focuses on **scalability, modularity, system design, observability, and evaluation** — not demo-level RAG pipelines.
 
 ---
 
@@ -15,7 +15,27 @@ This project focuses on **scalability, modularity, system design, and evaluation
 - Hash-based **embedding cache**
 - **Observability-first UI** (latency, retrieved chunks, confidence)
 - Explicit **evaluation layer** (Recall@K, latency)
+- **Dockerized & Cloud Run–ready**
+- **GCP Secret Manager integration**
 - Designed with **enterprise document systems** in mind
+
+---
+
+## 🌐 Live Deployment
+
+The application is deployed on **Google Cloud Run** and is publicly accessible.
+
+🔗 **Live URL:**  
+https://scalable-enterprise-rag-761523979642.asia-south1.run.app
+
+### Deployment Details
+- Hosted on **Google Cloud Run**
+- Container image stored in **Artifact Registry**
+- HTTPS enabled by default
+- Autoscaling based on traffic
+- Secrets securely injected via **GCP Secret Manager**
+
+> This deployment closely mirrors how production-grade GenAI / RAG services are deployed in real enterprise environments.
 
 ---
 
@@ -27,10 +47,7 @@ The system supports **multi-format enterprise document ingestion**:
 - ✅ **PDF** — Extracted using `pypdf`  
 - ✅ **DOCX** — Extracted using `python-docx`
 
-- Multi-format ingestion (TXT, PDF, DOCX) via extensible loader architecture
-
-
-Documents are automatically routed to the correct loader using a **factory-based ingestion layer**, making it easy to extend support to additional formats such as HTML, Markdown, or PPTX.
+Documents are routed to loaders using a **factory-based ingestion layer**, making it trivial to add support for formats like HTML, Markdown, or PPTX.
 
 ---
 
@@ -39,24 +56,19 @@ Documents are automatically routed to the correct loader using a **factory-based
 This system implements a **production-grade knowledge base lifecycle**.
 
 ### ✅ Incremental Ingestion
-- Each document is assigned a **stable, deterministic document ID**
-- Content hashes are tracked via `kb_state.json`
-- **Only new or modified documents are re-chunked and re-embedded**
+- Each document receives a **stable, deterministic document ID**
+- Content hashes tracked via `kb_state.json`
+- **Only new or modified documents are chunked and embedded**
 
 ### ✅ Persistent Vector Store
-- FAISS index and metadata are persisted locally
-- Restarting the app **does NOT rebuild embeddings**
-- The KB grows incrementally over time
+- FAISS index and metadata are persisted
+- Restarting the service **does not rebuild embeddings**
+- The knowledge base grows incrementally over time
 
-### ✅ Ignored Runtime Data
-The following artifacts are **intentionally excluded from Git**:
-
-- FAISS index files
-- KB state (`kb_state.json`)
-- Metadata (`metadata.pkl`)
-- Uploaded documents
-
-> This mirrors real production systems where data lives in object storage, volumes, or databases — not Git.
+### ✅ Safe Reuse Without Recompute
+- If documents are already ingested, the system **reuses the existing FAISS index**
+- The RAG pipeline auto-initializes from persisted state
+- This avoids unnecessary compute cost and LLM calls
 
 ---
 
@@ -69,7 +81,7 @@ The Streamlit UI exposes internal system behavior:
 - 🟢 **Confidence indicator** (heuristic)
 - 📚 **Exact retrieved contexts used by the LLM**
 
-This makes the system feel like an **internal Google / Meta RAG tool**, not a black box.
+This mirrors **internal enterprise RAG tools** used at large tech companies — not black-box demos.
 
 ---
 
@@ -131,11 +143,11 @@ scalable-enterprise-rag/
 │   └── strategies.py         # Fixed-size chunking with overlap
 │
 ├── embeddings/
-│   ├── embedder.py           # GeminiEmbedder / DummyEmbedder
+│   ├── embedder.py           # GeminiEmbedder
 │   └── cache.py              # Hash-based embedding cache
 │
 ├── vectorstore/
-│   ├── faiss_store.py        # FAISS index wrapper
+│   ├── faiss_store.py        # Persistent FAISS index wrapper
 │   └── kb_manager.py         # Incremental KB lifecycle manager
 │
 ├── retrieval/
@@ -154,8 +166,10 @@ scalable-enterprise-rag/
 │
 ├── data/                     # ❌ Ignored (runtime artifacts)
 │
+├── Dockerfile
+├── .dockerignore
 ├── .gitignore
-├── .env                      # GEMINI_API_KEY (ignored)
+├── requirements.txt
 ├── README.md
 └── LICENSE
 
@@ -164,16 +178,14 @@ scalable-enterprise-rag/
 ---
 ## ⚙️ Configuration & Secrets
 
-- API keys are loaded from `.env`
-- `.env` and all runtime data are **gitignored**
+### Local Development
+- Secrets are loaded via a `.env` file  
+- The `.env` file is **gitignored**
 
-### Production Deployment Recommendations
-
-For production environments, secrets and state should be managed using:
-
-- Environment variables
-- Secret managers (e.g., AWS Secrets Manager, GCP Secret Manager)
-- Persistent volumes or object storage (e.g., EBS, GCS, S3)
+### Production (Cloud Run)
+- Secrets are managed using **GCP Secret Manager**
+- Secrets are **injected as environment variables at runtime**
+- **No secrets are baked** into Docker images or source code
 
 ---
 
@@ -204,17 +216,35 @@ source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Run the pipeline
-python main.py
+streamlit run app/ui.py
 
 ```
+---
+## 🐳 Docker (Production-Equivalent)
+
+```bash
+docker build -t scalable-enterprise-rag .
+docker run -p 8501:8501 scalable-enterprise-rag
+```
+---
+## ☁️ Cloud Deployment (GCP)
+
+- Docker image pushed to **Artifact Registry**
+- Deployed on **Cloud Run**
+- **Autoscaling** enabled by default
+- Secure **HTTPS endpoint** exposed
+- Secrets injected securely via **GCP Secret Manager**
+
+This setup mirrors **real-world GenAI service deployments** used in production environments.
 
 ---
 ## 🧩 Design Philosophy
 
 - Production-first mindset  
-- Clear separation of concerns  
+- Clear separation of concerns
+- Compute-efficient incremental updates
 - Scales from small document sets to enterprise corpora  
-- Easily extensible for hybrid search, reranking, and evaluation  
+- Easily extensible for hybrid search, reranking, and evaluation
 
 ---
 ## 🛣️ Roadmap
@@ -227,7 +257,7 @@ Planned improvements to evolve this into a fully production-ready RAG system:
 - [ ] Streaming LLM responses
 - [ ] Multi-tenant vector index support
 - [ ] Monitoring & latency tracing
-- [ ] Deployment-ready architecture (Docker / Kubernetes)
+- [ ]  Kubernetes-native deployment
 
 ---
 ## 👤 Author
