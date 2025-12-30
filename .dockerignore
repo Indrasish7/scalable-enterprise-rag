@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Environment
+.env
+.env.*
+
+# Local data & runtime artifacts
+data/
+*.faiss
+*.index
+*.pkl
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
